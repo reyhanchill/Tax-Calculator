@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String
+  emailVerified Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  totpSecret    String?
+  totpEnabled   Boolean   @default(false)
+  gdprConsent   Boolean   @default(false)
+  accountType   String    @default("individual") // individual | self-employed | business
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  settings      UserSettings?
+  taxEntries    TaxEntry[]
+  auditLogs     AuditLog[]
+  employees     Employee[]
+  payRuns       PayRun[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+}
+
+model UserSettings {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  country             String   @default("england")
+  defaultTaxCode      String   @default("1257L")
+  studentLoanPlans    String   @default("[]")
+  pensionEmployeeRate Float    @default(0.05)
+  pensionEmployerRate Float    @default(0.03)
+  useSalarySacrifice  Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TaxEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  taxYear    String
+  entryName  String   @default("Tax Calculation")
+  status     String   @default("draft")
+  country    String   @default("england")
+  taxCode    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incomeItems   IncomeItem[]
+  deductions    Deduction[]
+  capitalGains  CapitalGain[]
+
+  @@index([userId])
+}
+
+model IncomeItem {
+  id          String @id @default(cuid())
+  entryId     String
+  type        String
+  amount      Float
+  description String @default("")
+
+  entry TaxEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+}
+
+model Deduction {
+  id          String @id @default(cuid())
+  entryId     String
+  type        String
+  amount      Float
+  description String @default("")
+
+  entry TaxEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+}
+
+model CapitalGain {
+  id            String @id @default(cuid())
+  entryId       String
+  assetType     String
+  purchasePrice Float
+  salePrice     Float
+  costs         Float  @default(0)
+  description   String @default("")
+
+  entry TaxEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  before     String?
+  after      String?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
+}
+
+model NewsletterSignup {
+  id        String   @id @default(cuid())
+  email     String
+  interest  String   // general-early-access | ai-early-access
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, interest])
+  @@index([interest])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ============================================================
+// Payroll Models
+// ============================================================
+
+model Employee {
+  id              String    @id @default(cuid())
+  employerId      String
+  firstName       String
+  lastName        String
+  email           String
+  dateOfBirth     String?   // stored as ISO date string
+  niNumber        String?   // National Insurance number
+  taxCode         String    @default("1257L")
+  jobRole         String    @default("")
+  employmentType  String    @default("salaried") // salaried | hourly
+  annualSalary    Float     @default(0)          // for salaried employees
+  hourlyRate      Float?                          // for hourly employees
+  payFrequency    String    @default("monthly")  // weekly | biweekly | monthly
+  payDay          String    @default("27")       // day of week (monday-friday) or day number (1-28)
+  pensionRate     Float     @default(0.05)       // employee pension %
+  pensionOptIn    Boolean   @default(true)       // HMRC: auto-enrolment for age 22-66, >£10k
+  studentLoanPlan String?   // plan1 | plan2 | plan4 | plan5 | postgraduate
+  startDate       String?   // ISO date
+  status          String    @default("active")   // active | inactive
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employer        User          @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  payRunItems     PayRunItem[]
+  timeEntries     TimeEntry[]
+
+  // Employee portal auth
+  portalPasswordHash String?
+  portalEnabled      Boolean  @default(false)
+
+  @@index([employerId])
+}
+
+model PayRun {
+  id              String    @id @default(cuid())
+  employerId      String
+  taxYear         String    @default("2025-26")
+  period          String    // e.g. "2025-04" for April 2025
+  payDate         String?   // ISO date of actual payment
+  payslipSendDate String?   // when payslips should be emailed
+  status          String    @default("draft") // draft | approved | paid
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employer      User          @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  items         PayRunItem[]
+
+  @@index([employerId])
+}
+
+model PayRunItem {
+  id              String  @id @default(cuid())
+  payRunId        String
+  employeeId      String
+
+  // Inputs (HR enters these)
+  hoursWorked     Float   @default(0)
+  clockIn         String?  // e.g. "09:00"
+  clockOut        String?  // e.g. "17:30"
+  breakMinutes    Float   @default(0)   // break duration
+  breakPaid       Boolean @default(false)
+  overtimeHours   Float   @default(0)
+  overtimeRate    Float   @default(1.5) // multiplier
+  bonus           Float   @default(0)
+  sickDays        Float   @default(0)
+  holidayDays     Float   @default(0)
+  adjustment      Float   @default(0) // manual +/- adjustment
+  adjustmentNote  String?
+
+  // Calculated (system fills these)
+  grossPay        Float   @default(0)
+  incomeTax       Float   @default(0)
+  employeeNIC     Float   @default(0)
+  employerNIC     Float   @default(0)
+  pensionEmployee Float   @default(0)
+  pensionEmployer Float   @default(0)
+  studentLoan     Float   @default(0)
+  netPay          Float   @default(0)
+  totalCostToEmployer Float @default(0)
+
+  payRun      PayRun      @relation(fields: [payRunId], references: [id], onDelete: Cascade)
+  employee    Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payslip     Payslip?
+  timeEntries TimeEntry[]
+
+  @@index([payRunId])
+  @@index([employeeId])
+}
+
+model Payslip {
+  id            String    @id @default(cuid())
+  payRunItemId  String    @unique
+  viewedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  payRunItem    PayRunItem @relation(fields: [payRunItemId], references: [id], onDelete: Cascade)
+}
+
+model TimeEntry {
+  id              String  @id @default(cuid())
+  employeeId      String
+  payRunItemId    String?
+  date            String  // ISO date e.g. "2025-04-07"
+  clockIn         String? // e.g. "09:00"
+  clockOut        String? // e.g. "17:30"
+  breakMinutes    Float   @default(0)
+  breakPaid       Boolean @default(false)
+  hoursWorked     Float   @default(0)
+  overtimeHours   Float   @default(0)
+  overtimeRate    Float   @default(1.5)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payRunItem   PayRunItem? @relation(fields: [payRunItemId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([payRunItemId])
+}

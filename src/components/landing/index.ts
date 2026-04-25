@@ -1,0 +1,9 @@
+export { default as LandingHeader } from "./LandingHeader";
+export { default as HeroSection } from "./HeroSection";
+export { default as PlatformModulesSection } from "./PlatformModulesSection";
+export { default as FeaturesSection } from "./FeaturesSection";
+export { default as RoadmapSection } from "./RoadmapSection";
+export { default as RoadmapAISection } from "./RoadmapAISection";
+export { default as AboutUsSection } from "./AboutUsSection";
+export { default as CtaSection } from "./CtaSection";
+export { default as LandingFooter } from "./LandingFooter";
