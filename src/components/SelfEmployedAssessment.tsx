@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useMemo, useCallback, createContext, useContext } from "react";
-import { TAX_YEAR_OPTIONS, isClaimableYear, getTaxYearData } from "@/lib/tax/data";
+import {
+  TAX_YEAR_OPTIONS,
+  isClaimableYear,
+  getTaxYearData,
+  getDefaultTaxYear,
+} from "@/lib/tax/data";
 import { TaxYear, Country, StudentLoanPlan } from "@/lib/tax/types";
 import { calculateFullTax } from "@/lib/tax/calculators";
 import { formatCurrency, annualToPayPeriod, PayPeriod, payPeriodLabel } from "@/lib/utils";
@@ -17,7 +22,7 @@ const TipCtx = createContext<{ openId: string | null; set: (id: string | null) =
 interface Props { defaultCountry: Country; defaultStudentLoanPlans: StudentLoanPlan[]; defaultPensionEmployeeRate: number; }
 
 export default function SelfEmployedAssessment(props: Props) {
-  const [taxYear, setTaxYear] = useState<TaxYear>("2025-26");
+  const [taxYear, setTaxYear] = useState<TaxYear>(getDefaultTaxYear());
   const [country, setCountry] = useState<Country>(props.defaultCountry);
   const [payPeriod, setPayPeriod] = useState<PayPeriod>("annual");
   const [turnover, setTurnover] = useState(0);
@@ -50,7 +55,7 @@ export default function SelfEmployedAssessment(props: Props) {
   const handleReset = () => {
     setTurnover(0); setOtherIncome(0); setUseTradingAllowance(false);
     setExpenses(Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.key, 0]))); setStudentLoans([]);
-    setIncludePension(false); setPensionRate(0.05); setTaxYear("2025-26");
+    setIncludePension(false); setPensionRate(0.05); setTaxYear(getDefaultTaxYear());
     setCountry(props.defaultCountry); setOpenTip(null);
   };
 
@@ -82,7 +87,7 @@ export default function SelfEmployedAssessment(props: Props) {
           payments on account.
         </p>
       </div>
-      {/* ── Settings ────────────────────────────────────── */}
+      {/* -- Settings -------------------------------------- */}
       <div className={`${card} p-5`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Settings</h2>
@@ -102,7 +107,7 @@ export default function SelfEmployedAssessment(props: Props) {
         </div>
       </div>
 
-      {/* ── Main Grid ────────────────────────────────────── */}
+      {/* -- Main Grid -------------------------------------- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Inputs */}
         <div className="lg:col-span-2 space-y-6">
@@ -178,7 +183,21 @@ export default function SelfEmployedAssessment(props: Props) {
                 </label>
               </div>
               <p className="text-xs text-slate-400 mb-3">Self-employed pension contribution (voluntary).</p>
-              {includePension && <div><label className="block text-xs font-medium text-slate-500 mb-1.5">Contribution rate</label><select value={pensionRate} onChange={e=>setPensionRate(parseFloat(e.target.value))} className={sel}>{[0.03,0.05,0.08,0.10,0.15,0.20].map(r=><option key={r} value={r}>{(r*100).toFixed(0)}%</option>)}</select></div>}
+              {includePension && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Contribution rate (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={pensionRate > 0 ? pensionRate * 100 : ""}
+                    onChange={(event) => setPensionRate(Math.max(0, (parseFloat(event.target.value) || 0) / 100))}
+                    className={sel}
+                    placeholder="9.4"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Use decimal percentages if needed (e.g. 9.4%).</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -263,7 +282,7 @@ export default function SelfEmployedAssessment(props: Props) {
         </div>
       </div>
 
-      {/* ── Tips Modal ──────────────────────────────────── */}
+      {/* -- Tips Modal ------------------------------------ */}
       {showTips && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={()=>setShowTips(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />

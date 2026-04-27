@@ -1,9 +1,8 @@
-// ============================================================
 // UK Tax Calculator - Core Types
 // All monetary values are annual amounts in GBP
-// ============================================================
 
 export type TaxYear =
+  | "2026-27"
   | "2025-26"
   | "2024-25"
   | "2023-24"
@@ -30,9 +29,7 @@ export type IncomeType =
 
 export type CGTAssetType = "residential" | "shares" | "other" | "business-asset";
 
-// ============================================================
 // Tax Band Configuration
-// ============================================================
 
 export interface TaxBand {
   name: string;
@@ -41,9 +38,7 @@ export interface TaxBand {
   to: number; // taxable income to (above PA), Infinity for top band
 }
 
-// ============================================================
 // Tax Year Data
-// ============================================================
 
 export interface IncomeTaxData {
   personalAllowance: number;
@@ -148,15 +143,30 @@ export interface TaxYearData {
   cgt: CGTData;
 }
 
-// ============================================================
 // Calculation Results
-// ============================================================
 
 export interface TaxBandResult {
   bandName: string;
   rate: number;
   taxableAmount: number;
   tax: number;
+}
+export interface EmploymentIncomeTaxBreakdown {
+  employmentIndex: number;
+  employmentIncome: number;
+  taxCode: string;
+  country: Country;
+  calculationBasis:
+    | "cumulative"
+    | "non-cumulative-week1"
+    | "non-cumulative-month1"
+    | "non-cumulative-x";
+  periodsPerYear: number;
+  allowanceUsed: number;
+  taxableAdjustment: number;
+  taxableIncome: number;
+  bands: TaxBandResult[];
+  totalTax: number;
 }
 
 export interface IncomeTaxResult {
@@ -176,6 +186,14 @@ export interface IncomeTaxResult {
   totalTax: number;
   effectiveRate: number;
   marginalRate: number;
+  calculationMode?: "combined-annual-liability" | "per-employment-paye";
+  employmentBreakdown?: EmploymentIncomeTaxBreakdown[];
+  annualLiabilityComparison?: {
+    taxableIncome: number;
+    effectivePersonalAllowance: number;
+    totalIncomeTax: number;
+    totalTax: number;
+  };
 }
 
 export interface NICResult {
@@ -185,6 +203,11 @@ export interface NICResult {
   class4: number;
   totalEmployee: number;
   totalEmployer: number;
+  class1ByEmployment?: Array<{
+    employmentIncome: number;
+    employeeNIC: number;
+    employerNIC: number;
+  }>;
 }
 
 export interface StudentLoanResult {

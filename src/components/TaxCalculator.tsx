@@ -1,12 +1,27 @@
 "use client";
 
 import { useState, useMemo, useCallback, createContext, useContext } from "react";
-import { TAX_YEAR_OPTIONS, isClaimableYear, getTaxYearData } from "@/lib/tax/data";
-import { TaxYear, Country, StudentLoanPlan, CGTAssetType } from "@/lib/tax/types";
+import {
+  TAX_YEAR_OPTIONS,
+  isClaimableYear,
+  getTaxYearData,
+  getDefaultTaxYear,
+} from "@/lib/tax/data";
+import {
+  TaxYear,
+  Country,
+  StudentLoanPlan,
+  CGTAssetType,
+  EmploymentIncomeTaxBreakdown,
+} from "@/lib/tax/types";
 import { calculateFullTax, parseTaxCode, TaxInputs } from "@/lib/tax/calculators";
 import { formatCurrency, annualToPayPeriod, PayPeriod, payPeriodLabel } from "@/lib/utils";
 import { generateRecommendations } from "@/lib/tax/recommendations";
-import { alignTaxCodeWithCountry, normalizeCountryAndTaxCode } from "@/lib/tax/countryTaxCode";
+import {
+  alignTaxCodeWithCountry,
+  normalizeCountryAndTaxCode,
+  defaultTaxCodeForCountry,
+} from "@/lib/tax/countryTaxCode";
 import {
   FREQ_MULT,
   FREQ_OPTIONS,
@@ -31,19 +46,45 @@ interface TaxCalculatorProps {
 
 function toAnnual(e: IncomeEntry) { return e.amount * FREQ_MULT[e.frequency]; }
 function defEntry(): IncomeEntry { return { amount: 0, frequency: "annual" }; }
+interface EmploymentEntry extends IncomeEntry { id: string; taxCode: string; }
+let employmentEntryCounter = 0;
+function employmentEntryId() { employmentEntryCounter += 1; return `employment-${employmentEntryCounter}`; }
+function defaultEmploymentEntry(defaultTaxCode: string): EmploymentEntry {
+  return { id: employmentEntryId(), amount: 0, frequency: "annual", taxCode: defaultTaxCode };
+}
+function formatRatePercent(rate: number): string {
+  return `${(rate * 100).toFixed(1).replace(/\.0$/, "")}%`;
+}
+function getEmploymentCalculationBasisLabel(
+  basis: EmploymentIncomeTaxBreakdown["calculationBasis"],
+): string {
+  if (basis === "non-cumulative-week1") return "Emergency Week 1 non-cumulative basis.";
+  if (basis === "non-cumulative-month1") return "Emergency Month 1 non-cumulative basis.";
+  if (basis === "non-cumulative-x") return "Emergency non-cumulative (X) basis.";
+  return "Cumulative PAYE basis.";
+}
+const NON_EMPLOYMENT_INCOME_TYPES = INCOME_TYPES.filter(
+  (incomeType) => incomeType.key !== "employment",
+);
 
 export default function TaxCalculator(props: TaxCalculatorProps) {
   const initialCountryTax = normalizeCountryAndTaxCode(
     props.defaultCountry,
     props.defaultTaxCode,
   );
-  const [taxYear, setTaxYear] = useState<TaxYear>("2025-26");
+  const initialEmploymentTaxCode =
+    initialCountryTax.taxCode || defaultTaxCodeForCountry(initialCountryTax.country);
+  const [taxYear, setTaxYear] = useState<TaxYear>(getDefaultTaxYear());
   const [country, setCountry] = useState<Country>(initialCountryTax.country);
-  const [taxCode, setTaxCode] = useState(initialCountryTax.taxCode);
+  const [employments, setEmployments] = useState<EmploymentEntry[]>([
+    defaultEmploymentEntry(
+      alignTaxCodeWithCountry(initialEmploymentTaxCode, initialCountryTax.country),
+    ),
+  ]);
   const [payPeriod, setPayPeriod] = useState<PayPeriod>("annual");
   const [income, setIncome] = useState<Record<string, IncomeEntry>>({
-    employment: defEntry(), selfEmployment: defEntry(), dividend: defEntry(),
-    savings: defEntry(), rental: defEntry(), pension: defEntry(), other: defEntry(),
+    selfEmployment: defEntry(), dividend: defEntry(), savings: defEntry(),
+    rental: defEntry(), pension: defEntry(), other: defEntry(),
   });
   const [studentLoanPlans, setStudentLoanPlans] = useState<StudentLoanPlan[]>(props.defaultStudentLoanPlans);
   const [pensionEmployeeRate, setPensionEmployeeRate] = useState(props.defaultPensionEmployeeRate);
@@ -56,37 +97,155 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
   const [cgtLosses, setCgtLosses] = useState(0);
   const [openTip, setOpenTip] = useState<string | null>(null);
   const [showTips, setShowTips] = useState(false);
-
-  const annualIncome = useMemo(() => ({
-    employment: toAnnual(income.employment), selfEmployment: toAnnual(income.selfEmployment),
-    dividend: toAnnual(income.dividend), savings: toAnnual(income.savings),
-    rental: toAnnual(income.rental), pension: toAnnual(income.pension), other: toAnnual(income.other),
-  }), [income]);
-  const normalizedTaxCode = useMemo(
-    () => alignTaxCodeWithCountry(taxCode, country),
-    [taxCode, country],
+  const annualEmploymentIncome = useMemo(
+    () => employments.reduce((sum, employment) => sum + toAnnual(employment), 0),
+    [employments],
   );
 
+  const annualIncome = useMemo(() => ({
+    employment: annualEmploymentIncome, selfEmployment: toAnnual(income.selfEmployment),
+    dividend: toAnnual(income.dividend), savings: toAnnual(income.savings),
+    rental: toAnnual(income.rental), pension: toAnnual(income.pension), other: toAnnual(income.other),
+  }), [annualEmploymentIncome, income]);
+  const normalizedEmployments = useMemo(
+    () =>
+      employments.map((employment) => ({
+        income: toAnnual(employment),
+        taxCode:
+          alignTaxCodeWithCountry(
+            employment.taxCode || defaultTaxCodeForCountry(country),
+            country,
+          ) || undefined,
+        periodsPerYear: FREQ_MULT[employment.frequency],
+      })),
+    [employments, country],
+  );
+
+
+  const yearData = useMemo(() => getTaxYearData(taxYear), [taxYear]);
+  const employmentTaxCodeNotes = useMemo(
+    () =>
+      employments.map((employment) =>
+        parseTaxCode(
+          alignTaxCodeWithCountry(
+            employment.taxCode || defaultTaxCodeForCountry(country),
+            country,
+          ),
+          taxYear,
+        ),
+      ),
+    [employments, country, taxYear],
+  );
+  const employmentTaxCodeErrors = useMemo(
+    () =>
+      employments
+        .map((employment, index) => ({
+          index,
+          annualIncome: toAnnual(employment),
+          parsed: employmentTaxCodeNotes[index],
+          normalizedCode: alignTaxCodeWithCountry(
+            employment.taxCode || defaultTaxCodeForCountry(country),
+            country,
+          ),
+        }))
+        .filter(
+          (employment) =>
+            employment.annualIncome > 0 &&
+            employment.parsed?.validationStatus === "invalid",
+        )
+        .map(
+          (employment) =>
+            `Employment ${employment.index + 1} (${employment.normalizedCode}): ${
+              employment.parsed?.validationMessage ??
+              "This tax code format is invalid."
+            }`,
+        ),
+    [employments, employmentTaxCodeNotes, country],
+  );
+  const employmentTaxCodeWarnings = useMemo(() => {
+    const activeEmploymentCodes = employments
+      .map((employment, index) => ({
+        index,
+        annualIncome: toAnnual(employment),
+        parsed: employmentTaxCodeNotes[index],
+        normalizedCode: alignTaxCodeWithCountry(
+          employment.taxCode || defaultTaxCodeForCountry(country),
+          country,
+        ),
+      }))
+      .filter((employment) => employment.annualIncome > 0 && employment.parsed);
+    const warnings: string[] = [];
+    activeEmploymentCodes.forEach((employment) => {
+      if (employment.parsed.validationStatus === "valid-unusual") {
+        warnings.push(
+          `Employment ${employment.index + 1} (${employment.normalizedCode}): ${employment.parsed.validationMessage}`,
+        );
+      }
+    });
+    if (activeEmploymentCodes.length <= 1) return Array.from(new Set(warnings));
+
+    const allowanceBearingCount = activeEmploymentCodes.filter((employment) => {
+      const parsed = employment.parsed;
+      return (
+        parsed.allowance > 0 &&
+        !parsed.isBR &&
+        !parsed.isD0 &&
+        !parsed.isD1 &&
+        !parsed.isNT
+      );
+    }).length;
+    if (allowanceBearingCount > 1) {
+      warnings.push(
+        "More than one active employment is using an allowance-bearing code. HMRC usually applies Personal Allowance to one main job only.",
+      );
+    }
+    return Array.from(new Set(warnings));
+  }, [employments, employmentTaxCodeNotes, country]);
+  const hasInvalidEmploymentTaxCodes = employmentTaxCodeErrors.length > 0;
+  const emptyResult = useMemo(
+    () =>
+      calculateFullTax({
+        taxYear,
+        country,
+        employmentIncome: 0,
+        employments: [],
+        selfEmploymentIncome: 0,
+        dividendIncome: 0,
+        savingsIncome: 0,
+        rentalIncome: 0,
+        pensionIncome: 0,
+        otherIncome: 0,
+        taxCode: defaultTaxCodeForCountry(country),
+        studentLoanPlans: [],
+        pensionEmployeeRate: 0,
+        pensionEmployerRate: 0,
+        useSalarySacrifice: false,
+        capitalGains: undefined,
+        capitalLosses: 0,
+      }),
+    [taxYear, country],
+  );
   const result = useMemo(() => {
+    if (hasInvalidEmploymentTaxCodes) return emptyResult;
     const inputs: TaxInputs = {
-      taxYear, country, employmentIncome: annualIncome.employment, selfEmploymentIncome: annualIncome.selfEmployment,
+      taxYear,
+      country,
+      employmentIncome: annualIncome.employment,
+      employments: normalizedEmployments.filter((employment) => employment.income > 0),
+      selfEmploymentIncome: annualIncome.selfEmployment,
       dividendIncome: annualIncome.dividend, savingsIncome: annualIncome.savings, rentalIncome: annualIncome.rental,
-      pensionIncome: annualIncome.pension, otherIncome: annualIncome.other, taxCode: normalizedTaxCode || undefined,
+      pensionIncome: annualIncome.pension,
+      otherIncome: annualIncome.other,
+      taxCode: normalizedEmployments.find((employment) => employment.taxCode)?.taxCode,
       studentLoanPlans, pensionEmployeeRate: includePension ? pensionEmployeeRate : 0,
       pensionEmployerRate: includePension ? pensionEmployerRate : 0, useSalarySacrifice,
       capitalGains: showCGT && cgtGain > 0 ? [{ amount: cgtGain, assetType: cgtAssetType }] : undefined,
       capitalLosses: showCGT ? cgtLosses : 0,
     };
     return calculateFullTax(inputs);
-  }, [taxYear, country, annualIncome, normalizedTaxCode, studentLoanPlans, pensionEmployeeRate, pensionEmployerRate, useSalarySacrifice, includePension, showCGT, cgtGain, cgtAssetType, cgtLosses]);
-
-  const yearData = useMemo(() => getTaxYearData(taxYear), [taxYear]);
-  const parsedTaxCode = useMemo(
-    () => parseTaxCode(normalizedTaxCode || alignTaxCodeWithCountry("1257L", country), taxYear),
-    [normalizedTaxCode, country, taxYear],
-  );
+  }, [taxYear, country, annualIncome, normalizedEmployments, studentLoanPlans, pensionEmployeeRate, pensionEmployerRate, useSalarySacrifice, includePension, showCGT, cgtGain, cgtAssetType, cgtLosses, hasInvalidEmploymentTaxCodes, emptyResult]);
   const fmt = useCallback((v: number) => formatCurrency(annualToPayPeriod(v, payPeriod)), [payPeriod]);
-  const hasIncome = result.totalIncome > 0;
+  const hasIncome = !hasInvalidEmploymentTaxCodes && result.totalIncome > 0;
 
   const totalTax = useMemo(() =>
     result.incomeTax.totalTax + result.nic.totalEmployee + result.studentLoans.reduce((s, sl) => s + sl.repayment, 0) + (result.cgt?.totalCGT ?? 0)
@@ -100,14 +259,46 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
 
   const setAmt = (k: string, v: number) => setIncome(p => ({ ...p, [k]: { ...p[k], amount: v } }));
   const setFreq = (k: string, f: InputFrequency) => setIncome(p => ({ ...p, [k]: { ...p[k], frequency: f } }));
+  const setEmploymentAmount = (id: string, amount: number) =>
+    setEmployments((prev) =>
+      prev.map((employment) =>
+        employment.id === id ? { ...employment, amount } : employment,
+      ),
+    );
+  const setEmploymentFrequency = (id: string, frequency: InputFrequency) =>
+    setEmployments((prev) =>
+      prev.map((employment) =>
+        employment.id === id ? { ...employment, frequency } : employment,
+      ),
+    );
+  const setEmploymentTaxCode = (id: string, nextTaxCode: string) =>
+    setEmployments((prev) =>
+      prev.map((employment) =>
+        employment.id === id
+          ? { ...employment, taxCode: alignTaxCodeWithCountry(nextTaxCode, country) }
+          : employment,
+      ),
+    );
+  const addEmployment = () =>
+    setEmployments((prev) => [
+      ...prev,
+      defaultEmploymentEntry(defaultTaxCodeForCountry(country)),
+    ]);
+  const removeEmployment = (id: string) =>
+    setEmployments((prev) =>
+      prev.length > 1 ? prev.filter((employment) => employment.id !== id) : prev,
+    );
   const handleCountryChange = (nextCountry: Country) => {
     setCountry(nextCountry);
-    setTaxCode((prev) => alignTaxCodeWithCountry(prev, nextCountry));
-  };
-  const handleTaxCodeChange = (nextTaxCode: string) => {
-    const normalized = normalizeCountryAndTaxCode(country, nextTaxCode);
-    setCountry(normalized.country);
-    setTaxCode(normalized.taxCode);
+    setEmployments((prev) =>
+      prev.map((employment) => ({
+        ...employment,
+        taxCode: alignTaxCodeWithCountry(
+          employment.taxCode || defaultTaxCodeForCountry(nextCountry),
+          nextCountry,
+        ),
+      })),
+    );
   };
 
   const handleReset = () => {
@@ -115,11 +306,24 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
       props.defaultCountry,
       props.defaultTaxCode,
     );
-    setIncome({ employment: defEntry(), selfEmployment: defEntry(), dividend: defEntry(), savings: defEntry(), rental: defEntry(), pension: defEntry(), other: defEntry() });
-    setStudentLoanPlans([]); setPensionEmployeeRate(0.05); setPensionEmployerRate(0.03);
-    setUseSalarySacrifice(false); setIncludePension(true); setShowCGT(false);
-    setCgtGain(0); setCgtLosses(0); setTaxCode(resetCountryTax.taxCode);
-    setCountry(resetCountryTax.country); setTaxYear("2025-26"); setOpenTip(null);
+    setEmployments([
+      defaultEmploymentEntry(
+        alignTaxCodeWithCountry(
+          resetCountryTax.taxCode || defaultTaxCodeForCountry(resetCountryTax.country),
+          resetCountryTax.country,
+        ),
+      ),
+    ]);
+    setIncome({ selfEmployment: defEntry(), dividend: defEntry(), savings: defEntry(), rental: defEntry(), pension: defEntry(), other: defEntry() });
+    setStudentLoanPlans(props.defaultStudentLoanPlans);
+    setPensionEmployeeRate(props.defaultPensionEmployeeRate);
+    setPensionEmployerRate(props.defaultPensionEmployerRate);
+    setUseSalarySacrifice(props.defaultSalarySacrifice);
+    setIncludePension(true); setShowCGT(false);
+    setCgtGain(0); setCgtLosses(0);
+    setCountry(resetCountryTax.country);
+    setTaxYear(getDefaultTaxYear());
+    setOpenTip(null);
   };
 
   const card = "bg-white rounded-2xl shadow-sm border border-slate-200/80 transition-shadow hover:shadow-md";
@@ -149,13 +353,13 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
           sources, pension contributions, student loans, and capital gains.
         </p>
       </div>
-      {/* ── Settings ────────────────────────────────────── */}
+      {/* -- Settings -------------------------------------- */}
       <div className={`${card} p-5`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Settings</h2>
           <button onClick={handleReset} className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50 border border-red-200/60">Clear All</button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tax Year</label>
             <select value={taxYear} onChange={e => setTaxYear(e.target.value as TaxYear)} className={sel}>
@@ -175,27 +379,161 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
               <option value="wales">Wales</option><option value="northern-ireland">Northern Ireland</option>
             </select>
             <p className="text-[11px] text-emerald-600 mt-1.5 font-medium">{countryTaxNote}</p>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tax Code</label>
-            <input value={taxCode} onChange={e => handleTaxCodeChange(e.target.value)} className={inp} placeholder={alignTaxCodeWithCountry("1257L", country)} />
-            <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">{parsedTaxCode.explanation}</p>
+            <p className="text-[11px] text-slate-400 mt-1.5">Set a separate tax code for each employment below.</p>
           </div>
         </div>
       </div>
 
-      {/* ── Main Grid ────────────────────────────────────── */}
+      {/* -- Main Grid -------------------------------------- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* ── Left: Inputs ────────────────────────────────── */}
+        {/* -- Left: Inputs ---------------------------------- */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Income */}
+          {/* Employments */}
           <div className={`${card} overflow-hidden`}>
             <div className="px-6 pt-6 pb-4">
-              <h2 className="text-lg font-bold text-slate-800">Income</h2>
-              <p className="text-sm text-slate-400 mt-0.5">Enter each income source. Choose how you&apos;re paid and we&apos;ll annualise it.</p>
+              <h2 className="text-lg font-bold text-slate-800">Employments</h2>
+              <p className="text-sm text-slate-400 mt-0.5">
+                Add each job separately so NI is calculated per employer and tax codes are employment-specific.
+              </p>
             </div>
             <div className="divide-y divide-slate-100">
-              {INCOME_TYPES.map(type => {
+              {employments.map((employment, index) => {
+                const annualIncomeForEmployment = toAnnual(employment);
+                const taxCodeNote = employmentTaxCodeNotes[index];
+                return (
+                  <div key={employment.id} className="px-6 py-4 hover:bg-slate-50/50 transition-colors">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <p className="text-sm font-semibold text-slate-700">Employment {index + 1}</p>
+                      {employments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeEmployment(employment.id)}
+                          className="text-[11px] font-semibold text-red-500 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Income</label>
+                        <div className="flex w-full items-center gap-2">
+                          <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+                            {FREQ_OPTIONS.map((frequencyOption) => (
+                              <button
+                                key={frequencyOption.value}
+                                type="button"
+                                onClick={() =>
+                                  setEmploymentFrequency(
+                                    employment.id,
+                                    frequencyOption.value,
+                                  )
+                                }
+                                className={`text-[10px] font-semibold px-2 py-1 rounded-md transition-all ${
+                                  employment.frequency === frequencyOption.value
+                                    ? "bg-white text-emerald-700 shadow-sm"
+                                    : "text-slate-400 hover:text-slate-600"
+                                }`}
+                                title={frequencyOption.value}
+                              >
+                                {frequencyOption.short}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm font-medium">£</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={employment.amount || ""}
+                              onChange={(event) =>
+                                setEmploymentAmount(
+                                  employment.id,
+                                  parseFloat(event.target.value) || 0,
+                                )
+                              }
+                              className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-800 text-right focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 outline-none transition"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                        {employment.amount > 0 && employment.frequency !== "annual" && (
+                          <p className="text-[11px] text-slate-400 mt-1.5">
+                            = <span className="font-semibold text-slate-500">{formatCurrency(annualIncomeForEmployment)}</span> per year
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Tax code</label>
+                        <input
+                          value={employment.taxCode}
+                          onChange={(event) =>
+                            setEmploymentTaxCode(employment.id, event.target.value)
+                          }
+                          className={inp}
+                          placeholder={defaultTaxCodeForCountry(country)}
+                        />
+                        <p
+                          className={`text-[11px] mt-1.5 leading-snug ${
+                            taxCodeNote?.validationStatus === "invalid"
+                              ? "text-red-600"
+                              : taxCodeNote?.validationStatus === "valid-unusual"
+                                ? "text-amber-700"
+                                : "text-slate-400"
+                          }`}
+                        >
+                          {taxCodeNote?.explanation}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 space-y-3">
+              {employmentTaxCodeErrors.map((error) => (
+                <div
+                  key={error}
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-medium leading-snug text-red-700"
+                >
+                  ❌ {error}
+                </div>
+              ))}
+              {employmentTaxCodeWarnings.map((warning) => (
+                <div
+                  key={warning}
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium leading-snug text-amber-700"
+                >
+                  ⚠️ {warning}
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={addEmployment}
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-800"
+                >
+                  + Add employment
+                </button>
+                <p className="text-xs text-slate-500">
+                  Total employment income:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {formatCurrency(annualEmploymentIncome)}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Other Income */}
+          <div className={`${card} overflow-hidden`}>
+            <div className="px-6 pt-6 pb-4">
+              <h2 className="text-lg font-bold text-slate-800">Other Income</h2>
+              <p className="text-sm text-slate-400 mt-0.5">Add other taxable income streams and we&apos;ll annualise them.</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {NON_EMPLOYMENT_INCOME_TYPES.map(type => {
                 const entry = income[type.key] || defEntry();
                 const ann = toAnnual(entry);
                 return (
@@ -245,14 +583,40 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
             <p className="text-sm text-slate-400 mb-5">Auto-enrolment: 5% employee + 3% employer on qualifying earnings (£6,240 – £50,270).</p>
             {includePension && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="block text-xs font-medium text-slate-500 mb-1.5">Your rate</label>
-                  <select value={pensionEmployeeRate} onChange={e => setPensionEmployeeRate(parseFloat(e.target.value))} className={sel}>
-                    {[0.03,0.04,0.05,0.06,0.07,0.08,0.10,0.12,0.15].map(r => <option key={r} value={r}>{(r*100).toFixed(0)}%{r===0.05?" (minimum)":""}</option>)}
-                  </select></div>
-                <div><label className="block text-xs font-medium text-slate-500 mb-1.5">Employer rate</label>
-                  <select value={pensionEmployerRate} onChange={e => setPensionEmployerRate(parseFloat(e.target.value))} className={sel}>
-                    {[0.03,0.04,0.05,0.06,0.08,0.10].map(r => <option key={r} value={r}>{(r*100).toFixed(0)}%{r===0.03?" (minimum)":""}</option>)}
-                  </select></div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Your rate (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={pensionEmployeeRate > 0 ? pensionEmployeeRate * 100 : ""}
+                    onChange={(event) =>
+                      setPensionEmployeeRate(
+                        Math.max(0, (parseFloat(event.target.value) || 0) / 100),
+                      )
+                    }
+                    className={inp}
+                    placeholder="5"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Minimum auto-enrolment employee rate is 5%.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Employer rate (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={pensionEmployerRate > 0 ? pensionEmployerRate * 100 : ""}
+                    onChange={(event) =>
+                      setPensionEmployerRate(
+                        Math.max(0, (parseFloat(event.target.value) || 0) / 100),
+                      )
+                    }
+                    className={inp}
+                    placeholder="3"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Use decimals if needed (for example, 9.4%).</p>
+                </div>
                 <label className="sm:col-span-2 flex items-center gap-2.5 cursor-pointer rounded-xl p-3 -mx-1 hover:bg-slate-50 transition">
                   <input type="checkbox" checked={useSalarySacrifice} onChange={e => setUseSalarySacrifice(e.target.checked)} className="h-4 w-4 text-emerald-600 rounded border-slate-300" />
                   <span className="text-sm text-slate-700">Salary sacrifice <span className="text-slate-400">(saves employee &amp; employer NIC)</span></span>
@@ -298,7 +662,7 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
           </div>
         </div>
 
-        {/* ── Right: Results ──────────────────────────────── */}
+        {/* -- Right: Results -------------------------------- */}
         <div className="space-y-6">
           {/* Period toggle */}
           <div className={`${card} p-4`}>
@@ -310,47 +674,100 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
             </div>
           </div>
 
-          {/* Summary card */}
-          <div className={`${card} overflow-hidden`}>
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5 text-white">
-              <p className="text-xs font-medium text-emerald-100 uppercase tracking-wider">Take-Home Pay</p>
-              <p className="text-3xl font-extrabold tracking-tight mt-1">{fmt(result.takeHomePay)}</p>
-              <p className="text-xs text-emerald-200 mt-1">{payPeriodLabel(payPeriod).toLowerCase()} &middot; {result.effectiveTaxRate}% effective rate</p>
+          {hasInvalidEmploymentTaxCodes ? (
+            <div className={`${card} border-red-200 bg-red-50 p-4`}>
+              <p className="text-sm font-semibold text-red-800">Tax calculation paused</p>
+              <p className="mt-1 text-xs text-red-700">
+                Fix the invalid tax code formats below before the app can calculate PAYE deductions.
+              </p>
+              <ul className="mt-2 space-y-1 text-[11px] text-red-700">
+                {employmentTaxCodeErrors.map((error) => (
+                  <li key={`results-${error}`}>• {error}</li>
+                ))}
+              </ul>
             </div>
-            <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50">
-              {(["annual","monthly","weekly"] as const).map(p => (
-                <div key={p} className="px-4 py-3 text-center">
-                  <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">{p}</p>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">{formatCurrency(annualToPayPeriod(result.takeHomePay, p))}</p>
-                </div>
-              ))}
+          ) : (
+            <div className={`${card} overflow-hidden`}>
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5 text-white">
+                <p className="text-xs font-medium text-emerald-100 uppercase tracking-wider">Take-Home Pay</p>
+                <p className="text-3xl font-extrabold tracking-tight mt-1">{fmt(result.takeHomePay)}</p>
+                <p className="text-xs text-emerald-200 mt-1">{payPeriodLabel(payPeriod).toLowerCase()} &middot; {result.effectiveTaxRate}% effective rate</p>
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50">
+                {(["annual","monthly","weekly"] as const).map(p => (
+                  <div key={p} className="px-4 py-3 text-center">
+                    <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">{p}</p>
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">{formatCurrency(annualToPayPeriod(result.takeHomePay, p))}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="px-6 py-5 space-y-3">
+                <Row label="Gross Income" value={fmt(result.totalIncome)} color="text-slate-800" bold />
+                {includePension && result.pension.employeeContribution > 0 && <Row label="Pension (you)" value={`-${fmt(result.pension.employeeContribution)}`} color="text-amber-600" />}
+                <Row label="Taxable Income" value={fmt(result.incomeTax.taxableIncome)} color="text-slate-600" />
+                <div className="h-px bg-slate-100" />
+                <Row label="Payroll PAYE/Income Tax deducted" value={`-${fmt(result.incomeTax.totalTax)}`} color="text-red-500" />
+                {result.incomeTax.annualLiabilityComparison && (
+                  <Row
+                    label="End-of-year annual assessment (reference only)"
+                    value={fmt(result.incomeTax.annualLiabilityComparison.totalTax)}
+                    color="text-slate-500"
+                  />
+                )}
+                <Row label="National Insurance" value={`-${fmt(result.nic.totalEmployee)}`} color="text-red-500" />
+                {result.studentLoans.map(sl => <Row key={sl.plan} label={`Student Loan (${sl.plan.replace("plan","Plan ").replace("postgraduate","PG")})`} value={`-${fmt(sl.repayment)}`} color="text-red-500" />)}
+                {result.cgt && result.cgt.totalCGT > 0 && <Row label="Capital Gains Tax" value={`-${fmt(result.cgt.totalCGT)}`} color="text-red-500" />}
+                <div className="h-px bg-slate-100" />
+                <Row label="Total Tax & Deductions" value={`-${fmt(totalTax)}`} color="text-red-600" bold />
+              </div>
             </div>
-            <div className="px-6 py-5 space-y-3">
-              <Row label="Gross Income" value={fmt(result.totalIncome)} color="text-slate-800" bold />
-              {includePension && result.pension.employeeContribution > 0 && <Row label="Pension (you)" value={`-${fmt(result.pension.employeeContribution)}`} color="text-amber-600" />}
-              <Row label="Taxable Income" value={fmt(result.incomeTax.taxableIncome)} color="text-slate-600" />
-              <div className="h-px bg-slate-100" />
-              <Row label="Income Tax" value={`-${fmt(result.incomeTax.totalTax)}`} color="text-red-500" />
-              <Row label="National Insurance" value={`-${fmt(result.nic.totalEmployee)}`} color="text-red-500" />
-              {result.studentLoans.map(sl => <Row key={sl.plan} label={`Student Loan (${sl.plan.replace("plan","Plan ").replace("postgraduate","PG")})`} value={`-${fmt(sl.repayment)}`} color="text-red-500" />)}
-              {result.cgt && result.cgt.totalCGT > 0 && <Row label="Capital Gains Tax" value={`-${fmt(result.cgt.totalCGT)}`} color="text-red-500" />}
-              <div className="h-px bg-slate-100" />
-              <Row label="Total Tax & Deductions" value={`-${fmt(totalTax)}`} color="text-red-600" bold />
-            </div>
-          </div>
+          )}
 
           {/* Income Tax Breakdown */}
           {hasIncome && (
-            <DetailCard title="Income Tax Breakdown" info="Income tax is the tax you pay on your earnings. Everyone gets a tax-free Personal Allowance — you only pay tax on income above that.">
+            <DetailCard title="PAYE deduction breakdown (payroll view)" info="This payroll view shows what each employment is deducting using its own tax code. The annual assessment figure shown below is a separate end-of-year reference, not an extra payroll deduction.">
               <DRow label="Personal Allowance (tax-free)" value={formatCurrency(result.incomeTax.effectivePersonalAllowance)}
                 info={`You can earn up to ${formatCurrency(yearData.incomeTax.personalAllowance)} before paying any income tax.`} />
               {result.incomeTax.personalAllowanceReduction > 0 && (
                 <DRow label="Allowance reduced (income over £100k)" value={`-${formatCurrency(result.incomeTax.personalAllowanceReduction)}`} warn
                   info="Your Personal Allowance is reduced by £1 for every £2 you earn above £100,000." />
               )}
+              {(result.incomeTax.employmentBreakdown ?? []).map((employmentBreakdown) => (
+                <DRow
+                  key={`employment-tax-${employmentBreakdown.employmentIndex}`}
+                  label={`Employment ${employmentBreakdown.employmentIndex} PAYE deduction (${employmentBreakdown.taxCode})`}
+                  value={formatCurrency(employmentBreakdown.totalTax)}
+                  info={`${getEmploymentCalculationBasisLabel(
+                    employmentBreakdown.calculationBasis,
+                  )} Taxable pay ${formatCurrency(
+                    employmentBreakdown.taxableIncome,
+                  )} with allowance used ${formatCurrency(
+                    employmentBreakdown.allowanceUsed,
+                  )}.`}
+                />
+              ))}
               {result.incomeTax.bands.filter(b => b.taxableAmount > 0).map((band, i) => (
                 <DRow key={i} label={`${band.bandName} (${(band.rate*100).toFixed(0)}%) on ${formatCurrency(band.taxableAmount)}`} value={formatCurrency(band.tax)} />
               ))}
+              {(result.incomeTax.employmentBreakdown?.length ?? 0) > 0 && (
+                <DRow
+                  label="Total payroll PAYE deduction across employments"
+                  value={formatCurrency(
+                    (result.incomeTax.employmentBreakdown ?? []).reduce(
+                      (sum, employmentBreakdown) => sum + employmentBreakdown.totalTax,
+                      0,
+                    ),
+                  )}
+                  bold
+                />
+              )}
+              {result.incomeTax.annualLiabilityComparison && (
+                <DRow
+                  label="End-of-year combined annual assessment (reference only)"
+                  value={formatCurrency(result.incomeTax.annualLiabilityComparison.totalTax)}
+                  info="This is not deducted via payroll in this calculator. It is a comparison projection using combined annual-liability rules."
+                />
+              )}
               {result.incomeTax.dividendTax > 0 && <DRow label="Dividend tax" value={formatCurrency(result.incomeTax.dividendTax)} info={`Dividend allowance: ${formatCurrency(yearData.incomeTax.dividendAllowance)} tax-free.`} />}
               {result.incomeTax.savingsTax > 0 && <DRow label="Savings interest tax" value={formatCurrency(result.incomeTax.savingsTax)} />}
               {result.incomeTax.marginalRate === 60 && (
@@ -364,7 +781,15 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
           {/* NIC */}
           {hasIncome && (
             <DetailCard title="National Insurance" info="NICs fund your State Pension and other benefits. You need 35 qualifying years for the full State Pension.">
-              {result.nic.class1Employee > 0 && <DRow label="Class 1 (Employee)" value={`${formatCurrency(result.nic.class1Employee)}/yr`}
+              {(result.nic.class1ByEmployment?.length ?? 0) > 1 && result.nic.class1ByEmployment?.map((employmentNIC, index) => (
+                <DRow
+                  key={`employment-nic-${index}`}
+                  label={`Class 1 (Employee · Employment ${index + 1})`}
+                  value={`${formatCurrency(employmentNIC.employeeNIC)}/yr`}
+                  info={`Employment income ${formatCurrency(employmentNIC.employmentIncome)}. Class 1 thresholds are applied separately per employer.`}
+                />
+              ))}
+              {result.nic.class1Employee > 0 && <DRow label="Class 1 (Employee total)" value={`${formatCurrency(result.nic.class1Employee)}/yr`}
                 info={`${(yearData.nic.class1.mainRate*100).toFixed(0)}% on earnings between ${formatCurrency(yearData.nic.class1.primaryThreshold)} and ${formatCurrency(yearData.nic.class1.upperEarningsLimit)}, then ${(yearData.nic.class1.upperRate*100).toFixed(0)}% above.`} />}
               {result.nic.class1Employer > 0 && <DRow label="Class 1 (Employer)" value={`${formatCurrency(result.nic.class1Employer)}/yr`} highlight
                 info={`Your employer pays ${(yearData.nic.class1.employerRate*100).toFixed(1)}% NIC on top of your salary — this doesn't come from your pay.`} />}
@@ -377,8 +802,8 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
           {hasIncome && includePension && result.pension.totalContribution > 0 && (
             <DetailCard title="Pension" info="Under auto-enrolment, your employer must enrol you in a workplace pension. Both you and your employer contribute.">
               <DRow label="Qualifying earnings" value={formatCurrency(result.pension.qualifyingEarnings)} info={`Pension calculated on earnings between ${formatCurrency(yearData.pension.autoEnrolment.lowerQualifyingEarnings)} and ${formatCurrency(yearData.pension.autoEnrolment.upperQualifyingEarnings)}.`} />
-              <DRow label={`Your contribution (${(pensionEmployeeRate*100).toFixed(0)}%)`} value={`${formatCurrency(result.pension.employeeContribution)}/yr`} />
-              <DRow label={`Employer (${(pensionEmployerRate*100).toFixed(0)}%)`} value={`${formatCurrency(result.pension.employerContribution)}/yr`} highlight info="Free money — paid on top of your salary." />
+              <DRow label={`Your contribution (${formatRatePercent(pensionEmployeeRate)})`} value={`${formatCurrency(result.pension.employeeContribution)}/yr`} />
+              <DRow label={`Employer (${formatRatePercent(pensionEmployerRate)})`} value={`${formatCurrency(result.pension.employerContribution)}/yr`} highlight info="Free money — paid on top of your salary." />
               <div className="h-px bg-slate-100 my-1" />
               <DRow label="Total into pension" value={`${formatCurrency(result.pension.totalContribution)}/yr`} bold />
               <DRow label="Tax relief" value={`+${formatCurrency(result.pension.taxRelief)}`} green info="Government top-up: 20% basic, claim more if higher-rate." />
@@ -399,7 +824,7 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
         </div>
       </div>
 
-      {/* ── Tips Modal ──────────────────────────────────── */}
+      {/* -- Tips Modal ------------------------------------ */}
       {showTips && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setShowTips(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -422,7 +847,7 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
   );
 }
 
-// ── Sub-components ────────────────────────────────────
+// -- Sub-components ------------------------------------
 function Row({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
   return <div className={`flex justify-between items-center ${bold ? "font-bold text-[15px]" : "text-sm"}`}><span className="text-slate-500">{label}</span><span className={`${color} font-semibold tabular-nums`}>{value}</span></div>;
 }

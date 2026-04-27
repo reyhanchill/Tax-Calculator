@@ -3,11 +3,13 @@ export function FieldInput({
   value,
   onChange,
   type = "number",
+  step,
 }: {
   label: string;
   value: number | string;
   onChange: (value: number | string) => void;
   type?: "number" | "text";
+  step?: number;
 }) {
   const displayValue =
     type === "number" && typeof value === "number" && value === 0 ? "" : value;
@@ -17,6 +19,7 @@ export function FieldInput({
       <input
         type={type}
         min={type === "number" ? 0 : undefined}
+        step={type === "number" ? (step ?? "any") : undefined}
         value={displayValue}
         onChange={(event) => onChange(type === "number" ? Number(event.target.value) : event.target.value)}
         className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm"

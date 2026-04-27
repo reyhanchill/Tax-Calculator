@@ -6,9 +6,7 @@ import { revalidatePath } from "next/cache";
 import { normalizeCountryAndTaxCode } from "@/lib/tax/countryTaxCode";
 import { Country } from "@/lib/tax/types";
 
-// ============================================================
 // Audit Logger
-// ============================================================
 async function createAuditLog(
   userId: string,
   action: string,
@@ -29,9 +27,7 @@ async function createAuditLog(
   });
 }
 
-// ============================================================
 // Tax Entry CRUD
-// ============================================================
 
 export async function saveTaxEntry(data: {
   taxYear: string;
@@ -154,9 +150,7 @@ export async function getUserAuditLogs() {
   });
 }
 
-// ============================================================
 // GDPR: Data Export
-// ============================================================
 export async function exportUserData() {
   const session = await getSession();
   if (!session) return { error: "Not authenticated" };
@@ -188,9 +182,7 @@ export async function exportUserData() {
   };
 }
 
-// ============================================================
 // GDPR: Account Deletion
-// ============================================================
 export async function deleteUserAccount() {
   const session = await getSession();
   if (!session) return { error: "Not authenticated" };
@@ -206,9 +198,7 @@ export async function deleteUserAccount() {
   return { success: true };
 }
 
-// ============================================================
 // Settings
-// ============================================================
 export async function updateUserSettings(data: {
   country?: Country;
   defaultTaxCode?: string;

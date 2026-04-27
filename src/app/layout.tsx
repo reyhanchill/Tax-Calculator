@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "TaxFlow — UK Tax Calculator",
-  description: "Free, HMRC-accurate UK tax calculator. Income Tax, NIC, Student Loans, Pensions, CGT and Self-Employed Assessment for 2018/19 to 2025/26.",
+  description: "Free, HMRC-accurate UK tax calculator. Income Tax, NIC, Student Loans, Pensions, CGT and Self-Employed Assessment for 2018/19 to 2026/27.",
   icons: { icon: "/favicon-32.png" },
 };
 

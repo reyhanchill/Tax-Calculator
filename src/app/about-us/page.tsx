@@ -64,7 +64,7 @@ export default async function AboutUsPage() {
           <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 sm:p-8 shadow-sm">
             <h2 className="text-base font-bold text-emerald-900">Tax Year Coverage</h2>
             <p className="text-sm text-emerald-800 mt-2 leading-relaxed">
-              We cover <strong>8 tax years</strong> from 2018/19 to 2025/26. HMRC generally allows filing or claims
+              We cover <strong>9 tax years</strong> from 2018/19 to 2026/27. HMRC generally allows filing or claims
               for up to <strong>4 previous years</strong>. Older years are included for planning and reference.
             </p>
           </section>

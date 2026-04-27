@@ -1,13 +1,88 @@
-// ============================================================
 // UK Tax Year Data — HMRC-Verified Rates & Thresholds
 // Sources: gov.uk/hmrc-rates, gov.uk/guidance/rates-and-thresholds
-// ============================================================
 
 import { TaxBand, TaxYear, TaxYearData } from "../types";
 
-// ============================================================
-// 2025/26 — Current Tax Year (6 Apr 2025 – 5 Apr 2026)
-// ============================================================
+// 2026/27 — Latest published dataset in-app (6 Apr 2026 – 5 Apr 2027)
+const data2026_27: TaxYearData = {
+  year: "2026-27",
+  label: "2026/27",
+  startDate: "2026-04-06",
+  endDate: "2027-04-05",
+  incomeTax: {
+    personalAllowance: 12570,
+    personalAllowanceTaperThreshold: 100000,
+    personalAllowanceTaperRate: 0.5,
+    bands: [
+      { name: "Basic rate", rate: 0.20, from: 0, to: 37700 },
+      { name: "Higher rate", rate: 0.40, from: 37700, to: 125140 },
+      { name: "Additional rate", rate: 0.45, from: 125140, to: Infinity },
+    ],
+    scottishBands: [
+      { name: "Starter rate", rate: 0.19, from: 0, to: 3967 },
+      { name: "Basic rate", rate: 0.20, from: 3967, to: 16956 },
+      { name: "Intermediate rate", rate: 0.21, from: 16956, to: 31092 },
+      { name: "Higher rate", rate: 0.42, from: 31092, to: 62430 },
+      { name: "Advanced rate", rate: 0.45, from: 62430, to: 125140 },
+      { name: "Top rate", rate: 0.48, from: 125140, to: Infinity },
+    ],
+    dividendAllowance: 500,
+    dividendRates: { basic: 0.1075, higher: 0.3575, additional: 0.3935 },
+    savingsAllowanceBasic: 1000,
+    savingsAllowanceHigher: 500,
+    savingsStartingRateBand: 5000,
+    marriageAllowance: 1260,
+    blindPersonsAllowance: 3250,
+  },
+  nic: {
+    class1: {
+      lowerEarningsLimit: 6708,
+      primaryThreshold: 12570,
+      upperEarningsLimit: 50270,
+      mainRate: 0.08,
+      upperRate: 0.02,
+      secondaryThreshold: 5000,
+      employerRate: 0.15,
+    },
+    class2: { weeklyRate: 3.65, smallProfitsThreshold: 7105 },
+    class4: {
+      lowerProfitsLimit: 12570,
+      upperProfitsLimit: 50270,
+      mainRate: 0.06,
+      upperRate: 0.02,
+    },
+  },
+  studentLoans: {
+    plan1: { threshold: 26900, rate: 0.09 },
+    plan2: { threshold: 29385, rate: 0.09 },
+    plan4: { threshold: 33795, rate: 0.09 },
+    plan5: { threshold: 25000, rate: 0.09 },
+    postgraduate: { threshold: 21000, rate: 0.06 },
+  },
+  pension: {
+    autoEnrolment: {
+      lowerQualifyingEarnings: 6240,
+      upperQualifyingEarnings: 50270,
+      minimumEmployeeRate: 0.05,
+      minimumEmployerRate: 0.03,
+      totalMinimumRate: 0.08,
+      earningsTrigger: 10000,
+    },
+    annualAllowance: 60000,
+    taperThreshold: 260000,
+    minimumTaperedAllowance: 10000,
+    maxTaxFreeLumpSum: 268275,
+  },
+  cgt: {
+    annualExemptAmount: 3000,
+    rates: { basicRate: 0.18, higherRate: 0.24 },
+    residentialRates: { basicRate: 0.18, higherRate: 0.24 },
+    businessAssetDisposalReliefRate: 0.18,
+    businessAssetDisposalReliefLifetimeLimit: 1000000,
+  },
+};
+
+// 2025/26 (6 Apr 2025 – 5 Apr 2026)
 const data2025_26: TaxYearData = {
   year: "2025-26",
   label: "2025/26",
@@ -86,11 +161,9 @@ const data2025_26: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2024/25 (6 Apr 2024 – 5 Apr 2025)
 // Note: CGT rates changed 30 Oct 2024 (main rates 10%/20% → 18%/24%)
 // Using post-Oct rates as the dominant period
-// ============================================================
 const data2024_25: TaxYearData = {
   year: "2024-25",
   label: "2024/25",
@@ -170,11 +243,9 @@ const data2024_25: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2023/24 (6 Apr 2023 – 5 Apr 2024)
 // NIC: 12% until 5 Jan 2024, then 10% from 6 Jan 2024
 // Using weighted average ~11.5% but we'll use the main rate for simplicity
-// ============================================================
 const data2023_24: TaxYearData = {
   year: "2023-24",
   label: "2023/24",
@@ -251,11 +322,9 @@ const data2023_24: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2022/23 (6 Apr 2022 – 5 Apr 2023)
 // Complex NIC year: 13.25% Apr-Nov, 12% Nov-Apr; PT changed Jul
 // Using dominant rates for simplicity
-// ============================================================
 const data2022_23: TaxYearData = {
   year: "2022-23",
   label: "2022/23",
@@ -332,9 +401,7 @@ const data2022_23: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2021/22
-// ============================================================
 const data2021_22: TaxYearData = {
   year: "2021-22",
   label: "2021/22",
@@ -411,9 +478,7 @@ const data2021_22: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2020/21
-// ============================================================
 const data2020_21: TaxYearData = {
   year: "2020-21",
   label: "2020/21",
@@ -490,9 +555,7 @@ const data2020_21: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2019/20
-// ============================================================
 const data2019_20: TaxYearData = {
   year: "2019-20",
   label: "2019/20",
@@ -569,9 +632,7 @@ const data2019_20: TaxYearData = {
   },
 };
 
-// ============================================================
 // 2018/19
-// ============================================================
 const data2018_19: TaxYearData = {
   year: "2018-19",
   label: "2018/19",
@@ -648,11 +709,10 @@ const data2018_19: TaxYearData = {
   },
 };
 
-// ============================================================
 // Tax Year Registry
-// ============================================================
 
 export const TAX_YEARS: Record<TaxYear, TaxYearData> = {
+  "2026-27": data2026_27,
   "2025-26": data2025_26,
   "2024-25": data2024_25,
   "2023-24": data2023_24,
@@ -662,17 +722,64 @@ export const TAX_YEARS: Record<TaxYear, TaxYearData> = {
   "2019-20": data2019_20,
   "2018-19": data2018_19,
 };
-
-export const TAX_YEAR_OPTIONS: { value: TaxYear; label: string; claimable: boolean }[] = [
-  { value: "2025-26", label: "2025/26 (Current)", claimable: true },
+const BASE_TAX_YEAR_OPTIONS: { value: TaxYear; label: string; claimable: boolean }[] = [
+  { value: "2026-27", label: "2026/27", claimable: true },
+  { value: "2025-26", label: "2025/26", claimable: true },
   { value: "2024-25", label: "2024/25", claimable: true },
   { value: "2023-24", label: "2023/24", claimable: true },
   { value: "2022-23", label: "2022/23", claimable: true },
-  { value: "2021-22", label: "2021/22", claimable: true },
+  { value: "2021-22", label: "2021/22", claimable: false },
   { value: "2020-21", label: "2020/21", claimable: false },
   { value: "2019-20", label: "2019/20", claimable: false },
   { value: "2018-19", label: "2018/19", claimable: false },
 ];
+
+export function getCurrentTaxYearValue(date: Date = new Date()): string {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const hasTaxYearStarted = month > 3 || (month === 3 && day >= 6);
+  const startYear = hasTaxYearStarted ? year : year - 1;
+  const endYear = String((startYear + 1) % 100).padStart(2, "0");
+  return `${startYear}-${endYear}`;
+}
+
+function hasTaxYearData(value: string): value is TaxYear {
+  return value in TAX_YEARS;
+}
+
+export function getLatestAvailableTaxYear(): TaxYear {
+  return BASE_TAX_YEAR_OPTIONS[0].value;
+}
+
+export function getDefaultTaxYear(date: Date = new Date()): TaxYear {
+  const currentTaxYear = getCurrentTaxYearValue(date);
+  if (hasTaxYearData(currentTaxYear)) {
+    return currentTaxYear;
+  }
+  return getLatestAvailableTaxYear();
+}
+
+const systemCurrentTaxYear = getCurrentTaxYearValue();
+const latestAvailableTaxYear = getLatestAvailableTaxYear();
+const isSystemCurrentYearAvailable = hasTaxYearData(systemCurrentTaxYear);
+
+export const TAX_YEAR_OPTIONS: { value: TaxYear; label: string; claimable: boolean }[] =
+  BASE_TAX_YEAR_OPTIONS.map((option) => {
+    const isCurrent = option.value === systemCurrentTaxYear;
+    const isLatestAvailableButNotCurrent =
+      option.value === latestAvailableTaxYear && !isSystemCurrentYearAvailable;
+    const suffix = isCurrent
+      ? " (Current)"
+      : isLatestAvailableButNotCurrent
+        ? " (Latest available)"
+        : "";
+
+    return {
+      ...option,
+      label: `${option.label}${suffix}`,
+    };
+  });
 
 function cloneBands(bands: TaxBand[]): TaxBand[] {
   return bands.map((band) => ({ ...band }));

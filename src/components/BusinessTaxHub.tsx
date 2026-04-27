@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { TAX_YEAR_OPTIONS } from "@/lib/tax/data";
+import { TAX_YEAR_OPTIONS, getDefaultTaxYear } from "@/lib/tax/data";
 import { estimateCorporationTax } from "@/lib/business/scenarios";
 import { calculateFullTax, calculateNIC } from "@/lib/tax/calculators";
 import { Country, StudentLoanPlan, TaxYear } from "@/lib/tax/types";
@@ -25,7 +25,7 @@ export default function BusinessTaxHub({
   defaultPensionEmployeeRate,
 }: BusinessTaxHubProps) {
   const initialCountryTax = normalizeCountryAndTaxCode(defaultCountry, defaultTaxCode);
-  const [taxYear, setTaxYear] = useState<TaxYear>("2025-26");
+  const [taxYear, setTaxYear] = useState<TaxYear>(getDefaultTaxYear());
   const [country, setCountry] = useState<Country>(initialCountryTax.country);
   const [taxCode, setTaxCode] = useState(initialCountryTax.taxCode);
   const [studentLoanPlans, setStudentLoanPlans] = useState<StudentLoanPlan[]>(defaultStudentLoanPlans);
@@ -258,6 +258,7 @@ export default function BusinessTaxHub({
               onChange={(value) =>
                 setDirectorPensionRate(Math.max(0, Number(value) / 100))
               }
+              step={0.1}
             />
           </div>
 

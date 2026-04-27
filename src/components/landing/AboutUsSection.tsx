@@ -5,7 +5,7 @@ export default function AboutUsSection() {
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 sm:p-8 text-center shadow-sm">
           <h3 className="text-base font-bold text-emerald-900">Tax Year Coverage</h3>
           <p className="text-sm text-emerald-800 mt-1.5 leading-relaxed">
-            We cover <strong>8 tax years</strong> from 2018/19 to 2025/26. Please note that HMRC only allows
+            We cover <strong>9 tax years</strong> from 2018/19 to 2026/27. Please note that HMRC only allows
             tax filing or claims for up to <strong>4 previous years</strong>. Older years are provided for reference only.
           </p>
         </div>
