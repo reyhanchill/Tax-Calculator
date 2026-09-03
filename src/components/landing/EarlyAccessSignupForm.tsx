@@ -83,12 +83,15 @@ export default function EarlyAccessSignupForm({
         >
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="early-access-title"
             className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+                <h3 id="early-access-title" className="text-lg font-bold text-slate-900">{title}</h3>
                 <p className="text-sm text-slate-600 mt-1">{description}</p>
               </div>
               <button
@@ -103,6 +106,7 @@ export default function EarlyAccessSignupForm({
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-3">
               <input
+                aria-label="Email address"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -127,7 +131,7 @@ export default function EarlyAccessSignupForm({
                 </button>
               </div>
               {message && (
-                <p className={`text-xs ${isError ? "text-red-600" : "text-emerald-700"}`}>
+                <p aria-live="polite" className={`text-xs ${isError ? "text-red-600" : "text-emerald-700"}`}>
                   {message}
                 </p>
               )}

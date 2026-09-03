@@ -141,10 +141,11 @@ export default function SettingsHub({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-country" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Default country
             </label>
             <select
+              id="settings-country"
               value={country}
               onChange={(event) => handleCountryChange(event.target.value as Country)}
               className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm"
@@ -156,10 +157,11 @@ export default function SettingsHub({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-tax-code" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Default tax code
             </label>
             <input
+              id="settings-tax-code"
               value={taxCode}
               onChange={(event) => handleTaxCodeChange(event.target.value)}
               className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm"
@@ -167,9 +169,9 @@ export default function SettingsHub({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <span className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Salary sacrifice default
-            </label>
+            </span>
             <label className="flex items-center gap-2 text-sm text-slate-700 h-[42px]">
               <input
                 type="checkbox"
@@ -184,10 +186,11 @@ export default function SettingsHub({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-pension-employee" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Employee pension rate (%)
             </label>
             <input
+              id="settings-pension-employee"
               type="number"
               min={0}
               value={pensionEmployeeRate * 100}
@@ -198,10 +201,11 @@ export default function SettingsHub({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-pension-employer" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Employer pension rate (%)
             </label>
             <input
+              id="settings-pension-employer"
               type="number"
               min={0}
               value={pensionEmployerRate * 100}
@@ -246,7 +250,7 @@ export default function SettingsHub({
           >
             {isSaving ? "Saving..." : "Save settings"}
           </button>
-          {message && <p className="text-xs text-slate-600">{message}</p>}
+          {message && <p aria-live="polite" className="text-xs text-slate-600">{message}</p>}
         </div>
       </div>
 
@@ -256,10 +260,11 @@ export default function SettingsHub({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-current-password" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Current password
             </label>
             <input
+              id="settings-current-password"
               type="password"
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
@@ -268,10 +273,11 @@ export default function SettingsHub({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-new-password" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               New password
             </label>
             <input
+              id="settings-new-password"
               type="password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
@@ -280,10 +286,11 @@ export default function SettingsHub({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
+            <label htmlFor="settings-confirm-password" className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
               Confirm password
             </label>
             <input
+              id="settings-confirm-password"
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
@@ -301,8 +308,8 @@ export default function SettingsHub({
           >
             {isSavingPassword ? "Updating..." : "Update password"}
           </button>
-          {passwordMessage && <p className="text-xs text-emerald-700">{passwordMessage}</p>}
-          {passwordError && <p className="text-xs text-red-600">{passwordError}</p>}
+          {passwordMessage && <p aria-live="polite" className="text-xs text-emerald-700">{passwordMessage}</p>}
+          {passwordError && <p aria-live="assertive" className="text-xs text-red-600">{passwordError}</p>}
         </div>
 
         <div className="mt-6 border-t border-slate-200 pt-4">

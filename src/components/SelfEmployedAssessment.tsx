@@ -286,10 +286,10 @@ export default function SelfEmployedAssessment(props: Props) {
       {showTips && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={()=>setShowTips(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="self-employed-tips-title" className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2.5"><span className="text-2xl">💡</span><div><h2 className="text-lg font-bold text-white">Smart Tax Tips</h2><p className="text-xs text-amber-100">{recommendations.length} personalised recommendations</p></div></div>
-              <button onClick={()=>setShowTips(false)} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
+              <div className="flex items-center gap-2.5"><span className="text-2xl">💡</span><div><h2 id="self-employed-tips-title" className="text-lg font-bold text-white">Smart Tax Tips</h2><p className="text-xs text-amber-100">{recommendations.length} personalised recommendations</p></div></div>
+              <button type="button" aria-label="Close tax tips" onClick={()=>setShowTips(false)} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
             </div>
             <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
               {recommendations.map((rec,i) => <div key={i} className="px-6 py-5"><div className="flex items-start gap-3"><span className="text-xl flex-shrink-0">{rec.icon}</span><div><p className="text-sm font-semibold text-slate-800">{rec.title}</p><p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{rec.text}</p><span className="inline-block mt-2 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">{rec.saving}</span></div></div></div>)}

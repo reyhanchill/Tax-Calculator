@@ -13,7 +13,7 @@ const ABOUT_PRINCIPLES = [
   },
   {
     title: "Decision support, not guesswork",
-    description: "Scenario comparison and planning tools are designed to show trade-offs clearly before action.",
+    description: "Clear estimates and breakdowns are designed to help users understand potential tax outcomes.",
   },
 ];
 

@@ -726,6 +726,7 @@ export function calculateIncomeTax(
     parsedTaxCode?.prefix,
   );
   const bands = selectIncomeTaxBandsForCountry(itData, effectiveCountry);
+  const ukSavingsAndDividendBands = itData.bands;
 
   // Tax on non-savings income
   const forcedRate = parsedTaxCode
@@ -754,17 +755,32 @@ export function calculateIncomeTax(
   let savingsTax = 0;
   let savingsAllowanceUsed = 0;
   if (savingsIncome > 0) {
-    const basicRateEnd = bands[0]?.to ?? 37700;
+    const basicRateEnd = ukSavingsAndDividendBands[0]?.to ?? 37700;
     const remainingBasicBand = Math.max(0, basicRateEnd - usedBandWidth);
-    // PSA
-    const isHigherRatePayer = nonSavingsIncome > basicRateEnd;
-    const psa = isHigherRatePayer ? itData.savingsAllowanceHigher : itData.savingsAllowanceBasic;
+    const totalTaxableBeforeNilRates = nonSavingsIncome + savingsIncome + dividendIncome;
+    const additionalRateStart = ukSavingsAndDividendBands[1]?.to ?? 125140;
+    const psa = totalTaxableBeforeNilRates > additionalRateStart
+      ? 0
+      : totalTaxableBeforeNilRates > basicRateEnd
+        ? itData.savingsAllowanceHigher
+        : itData.savingsAllowanceBasic;
     savingsAllowanceUsed = Math.min(savingsIncome, psa);
-    const taxableSavings = Math.max(0, savingsIncome - savingsAllowanceUsed);
+    const startingRateAvailable = Math.max(0, itData.savingsStartingRateBand - nonSavingsIncome);
+    const startingRateUsed = Math.min(
+      Math.max(0, savingsIncome - savingsAllowanceUsed),
+      startingRateAvailable,
+    );
+    const taxableSavings = Math.max(0, savingsIncome - savingsAllowanceUsed - startingRateUsed);
 
     const savingsInBasic = Math.min(taxableSavings, remainingBasicBand);
-    const savingsInHigher = taxableSavings - savingsInBasic;
-    savingsTax = savingsInBasic * 0.20 + savingsInHigher * 0.40;
+    const savingsAboveBasic = taxableSavings - savingsInBasic;
+    const higherBandEnd = additionalRateStart - basicRateEnd;
+    const savingsInHigher = Math.min(
+      savingsAboveBasic,
+      Math.max(0, higherBandEnd - Math.max(0, usedBandWidth - basicRateEnd)),
+    );
+    const savingsInAdditional = savingsAboveBasic - savingsInHigher;
+    savingsTax = savingsInBasic * 0.20 + savingsInHigher * 0.40 + savingsInAdditional * 0.45;
     usedBandWidth += savingsIncome;
   }
 
@@ -775,12 +791,12 @@ export function calculateIncomeTax(
     dividendAllowanceUsed = Math.min(dividendIncome, itData.dividendAllowance);
     const taxableDividends = dividendIncome - dividendAllowanceUsed;
     if (taxableDividends > 0) {
-      const basicRateEnd = bands[0]?.to ?? 37700;
+      const basicRateEnd = ukSavingsAndDividendBands[0]?.to ?? 37700;
       const remainingBasicBand = Math.max(0, basicRateEnd - usedBandWidth);
       const divInBasic = Math.min(taxableDividends, remainingBasicBand);
       const divAboveBasic = taxableDividends - divInBasic;
       // Simplified: split higher/additional
-      const higherBandEnd = (bands[1]?.to ?? 125140) - basicRateEnd;
+      const higherBandEnd = (ukSavingsAndDividendBands[1]?.to ?? 125140) - basicRateEnd;
       const divInHigher = Math.min(divAboveBasic, Math.max(0, higherBandEnd - Math.max(0, usedBandWidth - basicRateEnd)));
       const divInAdditional = divAboveBasic - divInHigher;
 
@@ -874,8 +890,9 @@ export function calculateNIC(
   let class4 = 0;
 
   if (selfEmploymentProfits > 0) {
-    // Class 2 — voluntary from 2024/25 onwards, but treated as paid if above threshold
-    if (selfEmploymentProfits >= nic.class2.smallProfitsThreshold) {
+    // From 2024/25, qualifying Class 2 contributions are treated as paid with no charge.
+    const class2StillPayable = Number(year.slice(0, 4)) < 2024;
+    if (class2StillPayable && selfEmploymentProfits >= nic.class2.smallProfitsThreshold) {
       class2 = nic.class2.weeklyRate * 52;
     }
 
@@ -906,8 +923,22 @@ export function calculateStudentLoans(
 ): StudentLoanResult[] {
   const data = getTaxYearData(year);
   const results: StudentLoanResult[] = [];
+  const uniquePlans = [...new Set(plans)];
+  const undergraduatePlans = uniquePlans.filter(
+    (plan): plan is Exclude<StudentLoanPlan, "postgraduate"> => plan !== "postgraduate",
+  );
+  // Multiple undergraduate loans share one 9% deduction, using the highest applicable
+  // threshold (HMRC/SLC guidance: shelter the most income when plans are combined).
+  const undergraduatePlan = undergraduatePlans
+    .map((plan) => ({ plan, data: data.studentLoans[plan] }))
+    .filter((entry) => Boolean(entry.data))
+    .sort((a, b) => b.data!.threshold - a.data!.threshold)[0];
+  const plansToCalculate: StudentLoanPlan[] = [
+    ...(undergraduatePlan ? [undergraduatePlan.plan] : []),
+    ...(uniquePlans.includes("postgraduate") ? ["postgraduate" as const] : []),
+  ];
 
-  for (const plan of plans) {
+  for (const plan of plansToCalculate) {
     let planData;
     switch (plan) {
       case "plan1": planData = data.studentLoans.plan1; break;
@@ -952,17 +983,26 @@ export function calculatePension(
   const employerContribution = Math.round(qualifyingEarnings * employerRate * 100) / 100;
   const totalContribution = employeeContribution + employerContribution;
 
-  // Tax relief (basic rate relief is automatic)
-  const taxRelief = Math.round(employeeContribution * 0.25 * 100) / 100; // 20% relief = multiply net by 1.25
+  // The configured rate is a gross contribution rate; relief at source is 20% of gross.
+  const taxRelief = useSalarySacrifice
+    ? 0
+    : Math.round(employeeContribution * 0.2 * 100) / 100;
 
   // Salary sacrifice NIC saving
   let salarySacrificeNICSaving = 0;
   if (useSalarySacrifice) {
-    // Employee saves NIC on the sacrificed amount
     const nicData = data.nic.class1;
-    if (grossIncome > nicData.primaryThreshold) {
-      salarySacrificeNICSaving = Math.round(employeeContribution * nicData.mainRate * 100) / 100;
-    }
+    const employeeNicOn = (income: number) => {
+      const main = Math.min(
+        Math.max(0, income - nicData.primaryThreshold),
+        nicData.upperEarningsLimit - nicData.primaryThreshold,
+      ) * nicData.mainRate;
+      const upper = Math.max(0, income - nicData.upperEarningsLimit) * nicData.upperRate;
+      return main + upper;
+    };
+    salarySacrificeNICSaving = roundCurrency(
+      employeeNicOn(grossIncome) - employeeNicOn(Math.max(0, grossIncome - employeeContribution)),
+    );
   }
 
   return {
@@ -1003,15 +1043,39 @@ export function calculateCGT(
   const basicRateBandEnd = itBands[0]?.to ?? 37700;
   const remainingBasicBand = Math.max(0, basicRateBandEnd - totalTaxableIncome);
 
-  // Check if any gains are residential
-  const hasResidential = gains.some((g) => g.assetType === "residential");
-  const rates = hasResidential ? cgtData.residentialRates : cgtData.rates;
-
-  const gainsAtBasic = Math.min(taxableGains, remainingBasicBand);
-  const gainsAtHigher = taxableGains - gainsAtBasic;
-
-  const taxAtBasicRate = Math.round(gainsAtBasic * rates.basicRate * 100) / 100;
-  const taxAtHigherRate = Math.round(gainsAtHigher * rates.higherRate * 100) / 100;
+  const taxableRatio = netGains > 0 ? taxableGains / netGains : 0;
+  const taxableByType = gains.map((gain) => ({
+    ...gain,
+    taxableAmount: Math.max(0, gain.amount) * taxableRatio,
+  }));
+  const taxableBusinessGains = taxableByType
+    .filter((gain) => gain.assetType === "business-asset")
+    .reduce((sum, gain) => sum + gain.taxableAmount, 0);
+  const businessGainsWithRelief = Math.min(
+    taxableBusinessGains,
+    cgtData.businessAssetDisposalReliefLifetimeLimit,
+  );
+  const businessGainsWithoutRelief = taxableBusinessGains - businessGainsWithRelief;
+  const businessTax = businessGainsWithRelief * cgtData.businessAssetDisposalReliefRate;
+  let basicBandRemaining = Math.max(0, remainingBasicBand - businessGainsWithRelief);
+  let taxAtBasicRate = businessTax;
+  let taxAtHigherRate = 0;
+  const nonRelievedGains = [
+    ...taxableByType.filter((item) => item.assetType !== "business-asset"),
+    ...(businessGainsWithoutRelief > 0
+      ? [{ amount: businessGainsWithoutRelief, taxableAmount: businessGainsWithoutRelief, assetType: "other" as const }]
+      : []),
+  ];
+  for (const gain of nonRelievedGains) {
+    const rates = gain.assetType === "residential" ? cgtData.residentialRates : cgtData.rates;
+    const atBasic = Math.min(gain.taxableAmount, basicBandRemaining);
+    const atHigher = gain.taxableAmount - atBasic;
+    taxAtBasicRate += atBasic * rates.basicRate;
+    taxAtHigherRate += atHigher * rates.higherRate;
+    basicBandRemaining -= atBasic;
+  }
+  taxAtBasicRate = Math.round(taxAtBasicRate * 100) / 100;
+  taxAtHigherRate = Math.round(taxAtHigherRate * 100) / 100;
 
   return {
     totalGains,
@@ -1129,13 +1193,34 @@ export function calculateFullTax(inputs: TaxInputs): FullTaxCalculation {
       normalizedTaxCode
     : normalizedTaxCode;
 
+  const pension = calculatePension(
+    resolvedEmploymentIncome,
+    pensionEmployeeRate,
+    pensionEmployerRate,
+    taxYear,
+    useSalarySacrifice,
+  );
+  const salarySacrifice = useSalarySacrifice ? pension.employeeContribution : 0;
+  const taxableEmploymentIncome = Math.max(0, resolvedEmploymentIncome - salarySacrifice);
+  const taxableEmployments = normalizedEmployments.map((employment) => {
+    const share = resolvedEmploymentIncome > 0 ? employment.income / resolvedEmploymentIncome : 0;
+    return { ...employment, income: Math.max(0, employment.income - salarySacrifice * share) };
+  });
+
   const grossNonDividendNonSavings =
-    resolvedEmploymentIncome +
+    taxableEmploymentIncome +
     selfEmploymentIncome +
     rentalIncome +
     pensionIncome +
     otherIncome;
-  const totalIncome = grossNonDividendNonSavings + dividendIncome + savingsIncome;
+  const totalIncome =
+    resolvedEmploymentIncome +
+    selfEmploymentIncome +
+    rentalIncome +
+    pensionIncome +
+    otherIncome +
+    dividendIncome +
+    savingsIncome;
 
   // Income Tax
   const annualLiabilityIncomeTax = calculateIncomeTax(
@@ -1149,7 +1234,7 @@ export function calculateFullTax(inputs: TaxInputs): FullTaxCalculation {
   const incomeTax = hasEmploymentBreakdown
     ? {
         ...calculatePerEmploymentPAYEIncomeTax(
-          normalizedEmployments,
+          taxableEmployments,
           selfEmploymentIncome + rentalIncome + pensionIncome + otherIncome,
           dividendIncome,
           savingsIncome,
@@ -1168,22 +1253,17 @@ export function calculateFullTax(inputs: TaxInputs): FullTaxCalculation {
 
   // NIC
   const nic = calculateNIC(
-    resolvedEmploymentIncome,
+    taxableEmploymentIncome,
     selfEmploymentIncome,
     taxYear,
-    employmentIncomesForNIC,
+    taxableEmployments.map((employment) => employment.income).filter((income) => income > 0),
   );
 
   // Student Loans (on gross income)
-  const studentLoans = calculateStudentLoans(totalIncome, studentLoanPlans, taxYear);
-
-  // Pension
-  const pension = calculatePension(
-    resolvedEmploymentIncome,
-    pensionEmployeeRate,
-    pensionEmployerRate,
+  const studentLoans = calculateStudentLoans(
+    Math.max(0, totalIncome - salarySacrifice),
+    studentLoanPlans,
     taxYear,
-    useSalarySacrifice,
   );
 
   // CGT
@@ -1194,7 +1274,10 @@ export function calculateFullTax(inputs: TaxInputs): FullTaxCalculation {
 
   // Summary
   const studentLoanTotal = studentLoans.reduce((sum, sl) => sum + sl.repayment, 0);
-  const totalDeductions = incomeTax.totalTax + nic.totalEmployee + studentLoanTotal + pension.employeeContribution + (cgt?.totalCGT ?? 0);
+  const pensionCost = useSalarySacrifice
+    ? pension.employeeContribution
+    : Math.max(0, pension.employeeContribution - pension.taxRelief);
+  const totalDeductions = incomeTax.totalTax + nic.totalEmployee + studentLoanTotal + pensionCost + (cgt?.totalCGT ?? 0);
   const takeHomePay = totalIncome - totalDeductions;
   const effectiveTaxRate = totalIncome > 0 ? (totalDeductions / totalIncome) * 100 : 0;
 

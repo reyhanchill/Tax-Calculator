@@ -6,7 +6,7 @@ Built with Next.js 16, React 19, Prisma, and Tailwind CSS.
 
 ## What It Does
 
-TaxFlow is a Decision Support System (DSS) that calculates UK tax liabilities and provides personalised recommendations to help users make informed financial decisions. Unlike simple take-home-pay calculators, TaxFlow implements HMRC's per-employment PAYE logic, multi-employment tax code handling, and gives users both a payroll deduction view and an annual assessment comparison.
+TaxFlow is a decision-support prototype that estimates UK tax liabilities and provides personalised recommendations. Results are informational estimates and should be checked against HMRC guidance or with a qualified professional.
 
 ### Core Features
 
@@ -25,11 +25,9 @@ TaxFlow is a Decision Support System (DSS) that calculates UK tax liabilities an
 - **Marriage Allowance** — M/N suffix code support with correct allowance transfer
 - **Personal Allowance taper** — £100k–£125,140 zone with 60% effective marginal rate detection
 - **Tax-saving recommendations** — contextual tips that adapt to income level, country, tax year, employment structure, and existing tax codes
-- **Business tax scenarios** — compare employee vs sole trader vs limited company structures
-- **Payroll module** — employee management, pay runs, payslip generation
-- **User accounts** — registration, email verification, TOTP 2FA, password reset
+- **Business tax estimation** — estimate company profit, Corporation Tax, VAT and director extraction
+- **User accounts** — registration, email verification and password reset
 - **GDPR compliance** — data export, account deletion, audit logging
-- **Saved tax entries** — CRUD operations with full audit trail
 
 ## How It Works
 
@@ -52,7 +50,7 @@ TaxFlow is a Decision Support System (DSS) that calculates UK tax liabilities an
 
 The tax engine is entirely pure-function based — no side effects, no database calls. All tax calculation logic lives in `src/lib/tax/` and can be tested independently of the UI. The UI layer in `src/components/` consumes the engine through React hooks and `useMemo` for reactive recalculation.
 
-The application uses server actions (Next.js App Router) for authenticated operations like saving tax entries, managing employees, and running payroll.
+The application uses Next.js server actions for authentication, account settings and supporting data operations.
 
 ## Project Structure
 
@@ -61,7 +59,6 @@ src/
 ├── app/                          # Next.js App Router pages
 │   ├── page.tsx                  # Landing page
 │   ├── dashboard/                # Main authenticated workspace
-│   ├── portal/                   # Employee self-service portal
 │   ├── login/                    # Authentication pages
 │   ├── register/
 │   ├── forgot-password/
@@ -75,8 +72,7 @@ src/
 │   ├── TaxCalculator.tsx         # Individual tax calculator UI (890 lines)
 │   │                               Per-employment inputs, tax code validation,
 │   │                               PAYE breakdown display, annual comparison
-│   ├── BusinessTaxHub.tsx        # Business scenario comparison tool
-│   │                               Employee vs sole trader vs limited company
+│   ├── BusinessTaxHub.tsx        # Business tax estimation tool
 │   ├── SelfEmployedAssessment.tsx # Self-employment tax estimator
 │   ├── SettingsHub.tsx           # User preferences (country, tax code, pension rates)
 │   ├── DashboardShell.tsx        # Authenticated layout wrapper
@@ -84,7 +80,7 @@ src/
 │   ├── tax-calculator/
 │   │   └── constants.ts          # Income type definitions, frequency multipliers
 │   ├── business-tax/
-│   │   ├── constants.ts          # Business scenario configuration
+│   │   ├── constants.ts          # Business input configuration
 │   │   └── ui.tsx                # Business tax UI components
 │   ├── self-employed/
 │   │   └── constants.ts          # Self-employment input configuration
@@ -123,12 +119,7 @@ src/
 │   │   └── actions.ts            # Server actions: save/update/delete tax entries,
 │   │                               GDPR export, account deletion, audit logging
 │   │
-│   ├── business/
-│   │   └── scenarios.ts          # Tax scenario comparison engine
-│   │                               Builds employee/sole-trader/company scenarios,
-│   │                               corporation tax estimation, weighted scoring
-│   │
-│   ├── auth/                     # Authentication (bcrypt, TOTP, sessions)
+│   ├── auth/                     # Authentication (bcrypt, email verification, sessions)
 │   ├── email/                    # Email verification and password reset
 │   ├── newsletter/               # Early-access signup handling
 │   ├── db.ts                     # Prisma client singleton
@@ -138,7 +129,7 @@ prisma/
 ├── schema.prisma                 # Database schema
 │                                   User, UserSettings, TaxEntry, IncomeItem,
 │                                   Deduction, CapitalGain, AuditLog,
-│                                   Employee, PayRun, PayRunItem, TimeEntry
+│                                   and supporting account records
 └── migrations/                   # Database migration history
 ```
 
@@ -163,7 +154,7 @@ The app runs at `http://localhost:3000`.
 
 Prisma uses the database configured in `DATABASE_URL`.
 
-- **Local/dev**: any SQLite or PostgreSQL instance works.
+- **Local/dev**: PostgreSQL.
 - **Production (Vercel)**: use hosted PostgreSQL (Neon, Supabase, Vercel Postgres) and set `DATABASE_URL` in Vercel Environment Variables.
 
 ## Deployment
@@ -180,7 +171,7 @@ Vercel applies schema migrations automatically on deploy.
 - **Framework**: Next.js 16 (App Router, React Server Components, Server Actions)
 - **UI**: React 19, Tailwind CSS 4, Radix UI primitives
 - **Database**: Prisma ORM with SQLite (dev) / PostgreSQL (production)
-- **Auth**: Custom implementation with bcrypt, TOTP (otplib + qrcode), email verification (nodemailer)
+- **Auth**: Custom implementation with bcrypt, signed sessions, email verification and password reset
 - **Charts**: Recharts
 - **Language**: TypeScript 5
 

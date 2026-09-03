@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { TAX_YEAR_OPTIONS, getDefaultTaxYear } from "@/lib/tax/data";
-import { estimateCorporationTax } from "@/lib/business/scenarios";
+import { estimateCorporationTax } from "@/lib/business/corporationTax";
 import { calculateFullTax, calculateNIC } from "@/lib/tax/calculators";
 import { Country, StudentLoanPlan, TaxYear } from "@/lib/tax/types";
 import { formatCurrency } from "@/lib/utils";
@@ -66,7 +66,10 @@ export default function BusinessTaxHub({
   );
 
   const taxableProfit = useMemo(() => Math.max(0, turnover - deductibleCosts), [turnover, deductibleCosts]);
-  const corporationTax = useMemo(() => estimateCorporationTax(taxableProfit), [taxableProfit]);
+  const corporationTax = useMemo(
+    () => estimateCorporationTax(taxableProfit, taxYear),
+    [taxableProfit, taxYear],
+  );
   const postTaxProfit = useMemo(
     () => Math.max(0, taxableProfit - corporationTax),
     [taxableProfit, corporationTax],

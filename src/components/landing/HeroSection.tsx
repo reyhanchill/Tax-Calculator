@@ -18,7 +18,7 @@ export default function HeroSection({ hasSession = false }: HeroSectionProps) {
           <br className="hidden sm:block" /> individuals and businesses
         </h1>
         <p className="mt-5 text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed">
-          A focused UK tax strategy workspace with clean reporting, scenario comparison,
+          A focused UK tax estimation workspace with clean reporting, clear breakdowns,
           and pension planning—designed for fast decisions without visual clutter.
         </p>
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">

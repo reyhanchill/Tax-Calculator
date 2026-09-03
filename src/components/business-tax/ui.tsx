@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export function FieldInput({
   label,
   value,
@@ -11,12 +13,14 @@ export function FieldInput({
   type?: "number" | "text";
   step?: number;
 }) {
+  const id = useId();
   const displayValue =
     type === "number" && typeof value === "number" && value === 0 ? "" : value;
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">{label}</label>
+      <label htmlFor={id} className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">{label}</label>
       <input
+        id={id}
         type={type}
         min={type === "number" ? 0 : undefined}
         step={type === "number" ? (step ?? "any") : undefined}
@@ -39,10 +43,12 @@ export function FieldSelect({
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">{label}</label>
+      <label htmlFor={id} className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">{label}</label>
       <select
+        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm"

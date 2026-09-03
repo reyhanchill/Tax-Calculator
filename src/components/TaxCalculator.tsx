@@ -828,10 +828,10 @@ export default function TaxCalculator(props: TaxCalculatorProps) {
       {showTips && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setShowTips(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="tax-tips-title" className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2.5"><span className="text-2xl">💡</span><div><h2 className="text-lg font-bold text-white">Smart Tax Tips</h2><p className="text-xs text-amber-100">{recommendations.length} personalised recommendations</p></div></div>
-              <button onClick={() => setShowTips(false)} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
+              <div className="flex items-center gap-2.5"><span className="text-2xl">💡</span><div><h2 id="tax-tips-title" className="text-lg font-bold text-white">Smart Tax Tips</h2><p className="text-xs text-amber-100">{recommendations.length} personalised recommendations</p></div></div>
+              <button type="button" aria-label="Close tax tips" onClick={() => setShowTips(false)} className="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
             </div>
             <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
               {recommendations.map((rec, i) => (

@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { sendEmail } from "@/lib/email/send";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 
 export type EarlyAccessInterest = "general" | "ai";
 
@@ -50,6 +52,12 @@ export async function subscribeToEarlyAccess(input: {
   email: string;
   interest: EarlyAccessInterest;
 }) {
+  const inputResult = z.object({
+    email: z.string().trim().max(254),
+    interest: z.enum(["general", "ai"]),
+  }).safeParse(input);
+  if (!inputResult.success) return { error: "Please enter valid signup details." };
+  input = inputResult.data;
   const email = input.email.trim().toLowerCase();
   if (!email || !EMAIL_PATTERN.test(email)) {
     return { error: "Please enter a valid email address." };
@@ -90,12 +98,29 @@ export async function subscribeToEarlyAccess(input: {
     };
   }
 
-  await prisma.newsletterSignup.create({
-    data: {
-      email,
-      interest,
-    },
-  });
+  try {
+    await prisma.newsletterSignup.create({
+      data: {
+        email,
+        interest,
+      },
+    });
+  } catch (error) {
+    // Two concurrent submissions for the same email+interest can both pass
+    // the findUnique check above; treat the resulting unique-constraint
+    // violation as "already subscribed" instead of a hard failure.
+    const isDuplicate =
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+    if (!isDuplicate) {
+      console.error("Failed to save newsletter signup:", error);
+      return { error: "Something went wrong. Please try again." };
+    }
+    return {
+      success: true,
+      alreadySubscribed: true,
+      message: "You are already on this early access list.",
+    };
+  }
 
   const deliveryStatus = await sendEarlyAccessConfirmationEmail({ email, interest });
 

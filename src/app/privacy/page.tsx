@@ -42,7 +42,7 @@ export default function PrivacyPage() {
             <p className="text-slate-600">Under GDPR and UK data protection law, you have the right to:</p>
             <ul className="list-disc pl-6 text-slate-600 space-y-1">
               <li><strong>Access</strong> your data — export all your data as JSON from your account settings</li>
-              <li><strong>Rectification</strong> — edit any of your saved tax entries at any time</li>
+              <li><strong>Rectification</strong> — update your account details and preferences</li>
               <li><strong>Erasure</strong> — permanently delete your account and all associated data</li>
               <li><strong>Data portability</strong> — download your data in a structured, machine-readable format</li>
               <li><strong>Object</strong> — you can stop using the service and delete your account at any time</li>

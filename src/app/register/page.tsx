@@ -25,7 +25,7 @@ const ACCOUNT_TYPES = [
     value: "business",
     label: "Business",
     icon: "🏢",
-    desc: "Owner & Payroll Hub",
+    desc: "Owner & Business Tax Hub",
     color: "border-violet-500 bg-violet-50 text-violet-700",
   },
 ];

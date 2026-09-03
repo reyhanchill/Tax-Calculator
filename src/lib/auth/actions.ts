@@ -7,9 +7,14 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
+import { z } from "zod";
 
 // Simple JWT-like session using signed cookies
-const SESSION_SECRET = process.env.AUTH_SECRET || "dev-secret-change-in-production";
+const SESSION_SECRET: string = process.env.AUTH_SECRET ?? "";
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error("AUTH_SECRET must be configured with at least 32 characters.");
+}
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 const PASSWORD_RESET_TTL_MS = 1000 * 60 * 30; // 30 minutes
@@ -22,6 +27,20 @@ function normalizeEmail(email: string): string {
 function isValidEmail(email: string): boolean {
   return EMAIL_PATTERN.test(email);
 }
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Dummy hash so a login attempt for a nonexistent email spends roughly the
+// same time as one for a real account, avoiding a bcrypt-timing oracle.
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$kqkI.V8jjFNLBmEw2Wxk5.Ez./nMtB4/jHNAxODVjrv.lJuPoU6H2";
 
 function hashEmailVerificationToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -73,6 +92,7 @@ async function sendVerificationEmail(input: {
   const baseUrl = await resolveEmailBaseUrl();
   const firstName = input.name?.trim().split(/\s+/)[0];
   const greeting = firstName ? `Hi ${firstName},` : "Hi,";
+  const greetingHtml = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi,";
   const verificationLink = createEmailVerificationLink(token, baseUrl);
 
   await prisma.emailVerificationToken.deleteMany({
@@ -95,7 +115,7 @@ ${verificationLink}
 This link expires in 24 hours.`;
 
   const html = `
-    <p>${greeting}</p>
+    <p>${greetingHtml}</p>
     <p>Thanks for creating your TaxFlow account.</p>
     <p>Please verify your email by clicking the link below:</p>
     <p><a href="${verificationLink}">Verify your email</a></p>
@@ -128,6 +148,7 @@ async function sendPasswordResetEmail(input: {
   const baseUrl = await resolveEmailBaseUrl();
   const firstName = input.name?.trim().split(/\s+/)[0];
   const greeting = firstName ? `Hi ${firstName},` : "Hi,";
+  const greetingHtml = firstName ? `Hi ${escapeHtml(firstName)},` : "Hi,";
   const resetLink = createPasswordResetLink(token, baseUrl);
 
   await prisma.passwordResetToken.deleteMany({
@@ -150,7 +171,7 @@ ${resetLink}
 This link expires in 30 minutes. If you did not request this, you can safely ignore this email.`;
 
   const html = `
-    <p>${greeting}</p>
+    <p>${greetingHtml}</p>
     <p>We received a request to reset your TaxFlow password.</p>
     <p>Use the link below to choose a new password:</p>
     <p><a href="${resetLink}">Reset your password</a></p>
@@ -172,19 +193,34 @@ This link expires in 30 minutes. If you did not request this, you can safely ign
   }
 }
 
-function signToken(payload: { userId: string; email: string }): string {
-  const data = JSON.stringify(payload);
+type SessionPayload = { userId: string; email: string; expiresAt: number };
+
+function signToken(payload: Omit<SessionPayload, "expiresAt">): string {
+  const data = JSON.stringify({
+    ...payload,
+    expiresAt: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+  });
   const signature = crypto.createHmac("sha256", SESSION_SECRET).update(data).digest("hex");
   return Buffer.from(data).toString("base64") + "." + signature;
 }
 
-function verifyToken(token: string): { userId: string; email: string } | null {
+function verifyToken(token: string): SessionPayload | null {
   try {
     const [dataB64, signature] = token.split(".");
     const data = Buffer.from(dataB64, "base64").toString();
     const expectedSignature = crypto.createHmac("sha256", SESSION_SECRET).update(data).digest("hex");
-    if (signature !== expectedSignature) return null;
-    return JSON.parse(data);
+    if (!signature || signature.length !== expectedSignature.length) return null;
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) return null;
+    const payload = JSON.parse(data) as SessionPayload;
+    if (
+      !payload.userId ||
+      !payload.email ||
+      typeof payload.expiresAt !== "number" ||
+      payload.expiresAt <= Math.floor(Date.now() / 1000)
+    ) {
+      return null;
+    }
+    return payload;
   } catch {
     return null;
   }
@@ -199,14 +235,19 @@ export async function register(formData: FormData) {
   if (!email || !isValidEmail(email)) {
     return { error: "Please enter a valid email address." };
   }
-  if (!password || password.length < 8) {
-    return { error: "Password must be at least 8 characters long." };
+  if (!password || password.length < 8 || password.length > 128) {
+    return { error: "Password must be between 8 and 128 characters long." };
   }
+  if (name.length > 100) return { error: "Name must be 100 characters or fewer." };
   if (!gdprConsent) {
     return { error: "You must consent to data processing to create an account." };
   }
 
-  const accountType = (formData.get("accountType") as string) || "individual";
+  const accountTypeResult = z.enum(["individual", "self-employed", "business"]).safeParse(
+    formData.get("accountType") || "individual",
+  );
+  if (!accountTypeResult.success) return { error: "Please select a valid account type." };
+  const accountType = accountTypeResult.data;
   const passwordHash = await bcrypt.hash(password, 12);
   const existing = await prisma.user.findUnique({ where: { email } });
 
@@ -267,12 +308,8 @@ export async function login(formData: FormData) {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    return { error: "Invalid email or password." };
-  }
-
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) {
+  const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!user || !valid) {
     return { error: "Invalid email or password." };
   }
   if (!user.emailVerified) {
@@ -288,7 +325,7 @@ export async function login(formData: FormData) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: SESSION_TTL_SECONDS,
     path: "/",
   });
 
@@ -418,7 +455,7 @@ export async function resetPasswordWithToken(formData: FormData) {
   if (!newPassword || !confirmPassword) {
     redirect(`/reset-password?token=${encodedToken}&status=missing`);
   }
-  if (newPassword.length < 8) {
+  if (newPassword.length < 8 || newPassword.length > 128) {
     redirect(`/reset-password?token=${encodedToken}&status=short`);
   }
   if (newPassword !== confirmPassword) {
@@ -476,6 +513,7 @@ export async function updateUserProfileDetails(data: { name: string }) {
   if (!session) return { error: "Not authenticated." };
 
   const nextName = data.name.trim();
+  if (nextName.length > 100) return { error: "Name must be 100 characters or fewer." };
   await prisma.user.update({
     where: { id: session.userId },
     data: { name: nextName || null },
@@ -500,8 +538,8 @@ export async function changeUserPassword(data: {
   if (!currentPassword || !newPassword || !confirmPassword) {
     return { error: "All password fields are required." };
   }
-  if (newPassword.length < 8) {
-    return { error: "New password must be at least 8 characters." };
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    return { error: "New password must be between 8 and 128 characters." };
   }
   if (newPassword !== confirmPassword) {
     return { error: "New password and confirmation do not match." };
